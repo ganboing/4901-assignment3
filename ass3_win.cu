@@ -7,6 +7,9 @@
 #include <cstdio>
 #include <cmath>
 #include <cassert>
+#include <memory>
+#include <limits>
+#include <algorithm>
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
 #include <thrust/sort.h>
@@ -19,7 +22,7 @@ const int numPart = 1 << numBits; // = 2^6
 const int numPerPart = 1 << (totalBits - numBits); // = 2^(19-6)
 const int mask = (1 << numBits) - 1;
 const int numThreads = 128;
-const int numBlocks = 512;
+//const int numBlocks = 512;
 
 #define cudaCheckError() {                                          \
         cudaError_t e=cudaGetLastError();                                 \
@@ -147,12 +150,12 @@ void split(int *d_key,float *d_value,int *d_startPos,int N)
 {
   dim3 grid;
   dim3 block;
-  if(N<1024){
+  if(N<numThreads){
       grid=1;
       block=N;
   }else{
-      grid=(N+1024-1)/1024;
-      block=1024;
+      grid=(N+numThreads-1)/numThreads;
+      block=numThreads;
   }
   int num_threads=grid.x * block.x;
   int hist_len = num_threads * numPart;
@@ -175,7 +178,9 @@ void split(int *d_key,float *d_value,int *d_startPos,int N)
   cudaCheckError();
   count_Hist<<<grid,block>>>(d_Hist, d_pidArr, N);
   cudaCheckError();
-  thrust::exclusive_scan(d_Hist, d_Hist + hist_len, d_psSum);
+  thrust::device_ptr<int> dev_Hist(d_Hist);
+  thrust::device_ptr<int> dev_psSum(d_psSum);
+  thrust::exclusive_scan(dev_Hist, dev_Hist + hist_len, dev_psSum);
   cudaCheckError();
   getStartPos<<<grid,block>>>(d_psSum, d_startPos, N);
   cudaCheckError();
@@ -212,13 +217,73 @@ void join(int d_key1[],float d_value1[],int d_key2[],float d_value2[],int d_star
   /* add your code here */
 }
 
+void check_arr(int* arr, int N){
+  int lower = std::numeric_limits<int>::min();
+  std::for_each(arr, arr+N, [&](int& val){
+    if(val < lower){
+        fprintf(stderr, "array not sorted! @ %td\n", &val - arr);
+        exit(-1);
+    }
+    else{
+        lower = val;
+    }
+  });
+}
+
+void print_arr(int* arr, int* loc, int N){
+  fprintf(stderr, "arr:\n");
+  //check_arr(arr, N);
+  for(int i=0;i<numPart;++i){
+      int start=loc[i], end;
+      if(i==numPart-1){
+          end = N;
+      }else{
+          end = loc[i+1];
+      }
+      fprintf(stderr, "from %d to %d: ", start, end);
+      for(int j=start;j!=end;++j){
+          fprintf(stderr, "%08x ", arr[j]);
+      }
+      fprintf(stderr, "\n");
+  }
+  fprintf(stderr, "loc:\n");
+  for(int i=0;i<numPart;++i){
+      fprintf(stderr, "%d ", loc[i]);
+  }
+  fprintf(stderr, "\n");
+}
+
 void hashJoin(int *d_key1,float *d_value1,int *d_key2,float *d_value2,int N1,int N2,int *d_result)
 {
   int *d_startPos1,*d_startPos2;
   cudaMalloc(&d_startPos1,sizeof(int) * numPart);
+  cudaCheckError();
   cudaMalloc(&d_startPos2,sizeof(int) * numPart);
+  cudaCheckError();
+
   split(d_key1,d_value1,d_startPos1,N1);
+
+  std::unique_ptr<int[]> arr1_finish(new int[N1]);
+  std::unique_ptr<int[]> arr1_loc(new int[numPart]);
+  cudaMemcpy(arr1_loc.get(), d_startPos1, sizeof(int)*numPart, cudaMemcpyDeviceToHost);
+  cudaCheckError();
+  cudaMemcpy(arr1_finish.get(), d_key1, sizeof(int)*N1, cudaMemcpyDeviceToHost);
+  cudaCheckError();
+
+  fprintf(stderr, "arr1: ");
+  print_arr(arr1_finish.get(), arr1_loc.get(), N1);
+
   split(d_key2,d_value2,d_startPos2,N2);
+
+  std::unique_ptr<int[]> arr2_finish(new int[N2]);
+  std::unique_ptr<int[]> arr2_loc(new int[numPart]);
+  cudaMemcpy(arr2_loc.get(), d_startPos2, sizeof(int)*numPart, cudaMemcpyDeviceToHost);
+  cudaCheckError();
+  cudaMemcpy(arr2_finish.get(), d_key2, sizeof(int)*N2, cudaMemcpyDeviceToHost);
+  cudaCheckError();
+
+  fprintf(stderr, "arr2: ");
+  print_arr(arr2_finish.get(), arr2_loc.get(), N2);
 
   dim3 grid(numPart);
   dim3 block(1024);
