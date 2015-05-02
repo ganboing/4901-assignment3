@@ -6,6 +6,7 @@
 #include <iostream>
 #include <cstdio>
 #include <cmath>
+#include <cassert>
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
 #include <thrust/sort.h>
@@ -14,11 +15,20 @@ using namespace std;
 
 const int numBits = 6;
 const int totalBits = 19;
-const int numPart = 1 << numBits;
-const int numPerPart = 1 << (totalBits - numBits);
+const int numPart = 1 << numBits; // = 2^6
+const int numPerPart = 1 << (totalBits - numBits); // = 2^(19-6)
 const int mask = (1 << numBits) - 1;
 const int numThreads = 128;
 const int numBlocks = 512;
+
+#define cudaCheckError() {                                          \
+        cudaError_t e=cudaGetLastError();                                 \
+        if(e!=cudaSuccess) {                                              \
+            printf("Cuda failure %s:%d: '%s'\n",__FILE__,__LINE__,cudaGetErrorString(e));           \
+            exit(EXIT_FAILURE);                                           \
+        }                                                                 \
+    }
+
 
 /*
    return the partition ID of the input element
@@ -135,6 +145,61 @@ void scatter(int d_key[],float d_value[],int out_key[],float out_value[],int d_l
 */
 void split(int *d_key,float *d_value,int *d_startPos,int N)
 {
+  dim3 grid;
+  dim3 block;
+  if(N<1024){
+      grid=1;
+      block=N;
+  }else{
+      grid=(N+1024-1)/1024;
+      block=1024;
+  }
+  int num_threads=grid.x * block.x;
+  int hist_len = num_threads * numPart;
+  int *d_pidArr, *d_Hist, *d_psSum, *d_loc, *d_outkey;
+  float *d_outvalue;
+  cudaMalloc(&d_outkey, sizeof(int)*N);
+  cudaCheckError();
+  cudaMalloc(&d_outvalue, sizeof(float)*N);
+  cudaCheckError();
+  cudaMalloc(&d_loc,sizeof(int)*N);
+  cudaCheckError();
+  cudaMalloc(&d_pidArr, sizeof(int)*N);
+  cudaCheckError();
+  cudaMalloc(&d_Hist, sizeof(int)*hist_len);
+  cudaCheckError();
+  cudaMalloc(&d_psSum, sizeof(int)*hist_len);
+  cudaCheckError();
+
+  mapPart<<<grid,block>>>(d_key, d_pidArr, N);
+  cudaCheckError();
+  count_Hist<<<grid,block>>>(d_Hist, d_pidArr, N);
+  cudaCheckError();
+  thrust::exclusive_scan(d_Hist, d_Hist + hist_len, d_psSum);
+  cudaCheckError();
+  getStartPos<<<grid,block>>>(d_psSum, d_startPos, N);
+  cudaCheckError();
+  write_Hist<<<grid,block>>>(d_pidArr, d_psSum, d_loc, N);
+  cudaCheckError();
+  scatter<<<grid,block>>>(d_key, d_value, d_outkey, d_outvalue, d_loc, N);
+  cudaCheckError();
+  cudaMemcpy(d_key, d_outkey, sizeof(int)*N, cudaMemcpyDeviceToDevice);
+  cudaCheckError();
+  cudaMemcpy(d_value, d_outvalue, sizeof(float)*N, cudaMemcpyDeviceToDevice);
+  cudaCheckError();
+
+  cudaFree(d_psSum);
+  cudaCheckError();
+  cudaFree(d_Hist);
+  cudaCheckError();
+  cudaFree(d_pidArr);
+  cudaCheckError();
+  cudaFree(d_loc);
+  cudaCheckError();
+  cudaFree(d_outvalue);
+  cudaCheckError();
+  cudaFree(d_outkey);
+  cudaCheckError();
   /* add your code here */
 }
 
@@ -168,7 +233,11 @@ int main()
   int *h_result, *d_result;
   int N1,N2;
 
-  scanf("%d%d",&N1,&N2);
+  {
+    int tmp = scanf("%d%d",&N1,&N2);
+    (void)tmp;
+    assert(tmp==2);
+  }
 
   h_key1 = (int*)malloc(N1 * sizeof(int));
   h_key2 = (int*)malloc(N2 * sizeof(int));
@@ -177,31 +246,53 @@ int main()
   h_result = (int*)malloc(N1 * sizeof(int));
 
   cudaMalloc(&d_key1, N1 * sizeof(int));
+  cudaCheckError();
   cudaMalloc(&d_key2, N2 * sizeof(int));
+  cudaCheckError();
   cudaMalloc(&d_value1, N1 * sizeof(float));
+  cudaCheckError();
   cudaMalloc(&d_value2, N2 * sizeof(float));
+  cudaCheckError();
   cudaMalloc(&d_result, N1 * sizeof(int));
+  cudaCheckError();
 
-  for(int i = 0; i < N1; ++i)
-	scanf("%d%f",&h_key1[i],&h_value1[i]);
+  for(int i = 0; i < N1; ++i){
+      int tmp = scanf("%d%f",&h_key1[i],&h_value1[i]);
+      (void)tmp;
+      assert(tmp==2);
+  }
 
-  for(int i = 0; i < N2; ++i)
-	scanf("%d%f",&h_key2[i],&h_value2[i]);
+  for(int i = 0; i < N2; ++i){
+      int tmp = scanf("%d%f",&h_key2[i],&h_value2[i]);
+      (void)tmp;
+      assert(tmp==2);
+  }
 
   memset(h_result,-1,sizeof(int) * N1);
   cudaMemcpy(d_key1,h_key1, sizeof(int) * N1, cudaMemcpyHostToDevice);
+  cudaCheckError();
   cudaMemcpy(d_result,h_result, sizeof(int) * N1, cudaMemcpyHostToDevice);
+  cudaCheckError();
   cudaMemcpy(d_key2,h_key2, sizeof(int) * N2, cudaMemcpyHostToDevice);
+  cudaCheckError();
   cudaMemcpy(d_value1,h_value1, sizeof(float) * N1, cudaMemcpyHostToDevice);
+  cudaCheckError();
   cudaMemcpy(d_value2,h_value2, sizeof(float) * N2, cudaMemcpyHostToDevice);
+  cudaCheckError();
   
   hashJoin(d_key1,d_value1,d_key2,d_value2,N1,N2,d_result);
+  cudaCheckError();
 
   cudaMemcpy(h_result,d_result,sizeof(int) * N1, cudaMemcpyDeviceToHost);
+  cudaCheckError();
   cudaMemcpy(h_key1,d_key1,sizeof(int) * N1, cudaMemcpyDeviceToHost);
+  cudaCheckError();
   cudaMemcpy(h_key2,d_key2,sizeof(int) * N2, cudaMemcpyDeviceToHost);
+  cudaCheckError();
   cudaMemcpy(h_value1,d_value1,sizeof(float) * N1, cudaMemcpyDeviceToHost);
+  cudaCheckError();
   cudaMemcpy(h_value2,d_value2,sizeof(float) * N2, cudaMemcpyDeviceToHost);
+  cudaCheckError();
 
   int matched = 0;
   freopen("out.txt","w",stdout);
@@ -223,12 +314,18 @@ int main()
   free(h_result);
 
   cudaFree(d_key1);
+  cudaCheckError();
   cudaFree(d_key2);
+  cudaCheckError();
   cudaFree(d_value1);
+  cudaCheckError();
   cudaFree(d_value2);
+  cudaCheckError();
   cudaFree(d_result);
+  cudaCheckError();
 
   cudaDeviceReset();
+  cudaCheckError();
   return 0;
 }
 
