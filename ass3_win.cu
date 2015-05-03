@@ -214,6 +214,13 @@ void split(int *d_key,float *d_value,int *d_startPos,int N)
   __global__
 void join(int d_key1[],float d_value1[],int d_key2[],float d_value2[],int d_startPos1[],int d_startPos2[],int d_result[],int N1,int N2)
 {
+    __shared__ int inner[numPerPart];
+    int threadId = threadIdx.x + blockIdx.x * blockDim.x;
+    int threadNumber = blockDim.x * gridDim.x;
+    //load B to inner shared
+    for(int i=threadId;i<N2;i+=threadNumber){
+        inner[i]
+    }
   /* add your code here */
 }
 
