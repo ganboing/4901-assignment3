@@ -10,6 +10,7 @@
 #include <memory>
 #include <limits>
 #include <algorithm>
+#include <vector>
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
 #include <thrust/sort.h>
@@ -219,7 +220,7 @@ void join(int d_key1[],float d_value1[],int d_key2[],float d_value2[],int d_star
     int threadNumber = blockDim.x * gridDim.x;
     //load B to inner shared
     for(int i=threadId;i<N2;i+=threadNumber){
-        inner[i]
+        //inner[i]
     }
   /* add your code here */
 }
@@ -270,27 +271,27 @@ void hashJoin(int *d_key1,float *d_value1,int *d_key2,float *d_value2,int N1,int
 
   split(d_key1,d_value1,d_startPos1,N1);
 
-  std::unique_ptr<int[]> arr1_finish(new int[N1]);
-  std::unique_ptr<int[]> arr1_loc(new int[numPart]);
-  cudaMemcpy(arr1_loc.get(), d_startPos1, sizeof(int)*numPart, cudaMemcpyDeviceToHost);
+  std::vector<int> arr1_finish(N1);
+  std::vector<int> arr1_loc(numPart);
+  cudaMemcpy(&arr1_loc.front(), d_startPos1, sizeof(int)*numPart, cudaMemcpyDeviceToHost);
   cudaCheckError();
-  cudaMemcpy(arr1_finish.get(), d_key1, sizeof(int)*N1, cudaMemcpyDeviceToHost);
+  cudaMemcpy(&arr1_finish.front(), d_key1, sizeof(int)*N1, cudaMemcpyDeviceToHost);
   cudaCheckError();
 
   fprintf(stderr, "arr1: ");
-  print_arr(arr1_finish.get(), arr1_loc.get(), N1);
+  print_arr(&arr1_finish.front(), &arr1_loc.front(), N1);
 
   split(d_key2,d_value2,d_startPos2,N2);
 
-  std::unique_ptr<int[]> arr2_finish(new int[N2]);
-  std::unique_ptr<int[]> arr2_loc(new int[numPart]);
-  cudaMemcpy(arr2_loc.get(), d_startPos2, sizeof(int)*numPart, cudaMemcpyDeviceToHost);
+  std::vector<int> arr2_finish(N2);
+  std::vector<int> arr2_loc(numPart);
+  cudaMemcpy(&arr2_loc.front(), d_startPos2, sizeof(int)*numPart, cudaMemcpyDeviceToHost);
   cudaCheckError();
-  cudaMemcpy(arr2_finish.get(), d_key2, sizeof(int)*N2, cudaMemcpyDeviceToHost);
+  cudaMemcpy(&arr2_finish.front(), d_key2, sizeof(int)*N2, cudaMemcpyDeviceToHost);
   cudaCheckError();
 
   fprintf(stderr, "arr2: ");
-  print_arr(arr2_finish.get(), arr2_loc.get(), N2);
+  print_arr(&arr2_finish.front(), &arr2_loc.front(), N2);
 
   dim3 grid(numPart);
   dim3 block(1024);
