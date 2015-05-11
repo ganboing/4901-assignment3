@@ -216,13 +216,32 @@ void split(int *d_key,float *d_value,int *d_startPos,int N)
 void join(int d_key1[],float d_value1[],int d_key2[],float d_value2[],int d_startPos1[],int d_startPos2[],int d_result[],int N1,int N2)
 {
     __shared__ int inner[numPerPart];
-    int threadId = threadIdx.x + blockIdx.x * blockDim.x;
-    int threadNumber = blockDim.x * gridDim.x;
+    int b_offset = threadIdx.x;
+    int b_size = blockDim.x;
     //load B to inner shared
-    for(int i=threadId;i<N2;i+=threadNumber){
-        //inner[i]
+    int start1 = d_startPos1[blockIdx.x];
+    int start2 = d_startPos2[blockIdx.x];
+    int end1, end2;
+    if(blockIdx.x == blockDim.x - 1){
+        end1 = N1;
+        end2 = N2;
     }
-  /* add your code here */
+    else{
+        end1 = d_startPos1[blockIdx.x + 1];
+        end2 = d_startPos2[blockIdx.x + 1];
+    }
+    for(int i=start2+b_offset;i<end2;i+=b_size){
+        inner[i-start2] = d_key2[i];
+    }
+    __syncthreads();
+    for(int i=start1+b_offset;i<end1;i+=b_size){
+        d_result[i] = -1;
+        for(int j=0;j<end2-start2;++j){
+            if(d_key1[i] == inner[j]){
+                d_result[i] = start2 + j;
+            }
+        }
+    }
 }
 
 void check_arr(int* arr, int N){
