@@ -23,7 +23,7 @@ const int numPart = 1 << numBits; // = 2^6
 const int numPerPart = 1 << (totalBits - numBits); // = 2^(19-6)
 const int mask = (1 << numBits) - 1;
 const int numThreads = 128;
-//const int numBlocks = 512;
+const int numBlocks = 512;
 
 #define cudaCheckError() {                                          \
         cudaError_t e=cudaGetLastError();                                 \
@@ -149,15 +149,15 @@ void scatter(int d_key[],float d_value[],int out_key[],float out_value[],int d_l
 */
 void split(int *d_key,float *d_value,int *d_startPos,int N)
 {
-  dim3 grid;
-  dim3 block;
-  if(N<numThreads){
+  dim3 grid(numBlocks);
+  dim3 block(numThreads);
+  /*if(N<numThreads){
       grid=1;
       block=N;
   }else{
       grid=(N+numThreads-1)/numThreads;
       block=numThreads;
-  }
+  }*/
   int num_threads=grid.x * block.x;
   int hist_len = num_threads * numPart;
   int *d_pidArr, *d_Hist, *d_psSum, *d_loc, *d_outkey;
@@ -244,7 +244,7 @@ void join(int d_key1[],float d_value1[],int d_key2[],float d_value2[],int d_star
     }
 }
 
-void check_arr(int* arr, int N){
+/*void check_arr(int* arr, int N){
   int lower = std::numeric_limits<int>::min();
   std::for_each(arr, arr+N, [&](int& val){
     if(val < lower){
@@ -255,7 +255,7 @@ void check_arr(int* arr, int N){
         lower = val;
     }
   });
-}
+}*/
 
 void print_arr(int* arr, int* loc, int N){
   fprintf(stderr, "arr:\n");
@@ -290,27 +290,27 @@ void hashJoin(int *d_key1,float *d_value1,int *d_key2,float *d_value2,int N1,int
 
   split(d_key1,d_value1,d_startPos1,N1);
 
-  std::vector<int> arr1_finish(N1);
-  std::vector<int> arr1_loc(numPart);
-  cudaMemcpy(&arr1_loc.front(), d_startPos1, sizeof(int)*numPart, cudaMemcpyDeviceToHost);
-  cudaCheckError();
-  cudaMemcpy(&arr1_finish.front(), d_key1, sizeof(int)*N1, cudaMemcpyDeviceToHost);
-  cudaCheckError();
+  //std::vector<int> arr1_finish(N1);
+  //std::vector<int> arr1_loc(numPart);
+  //cudaMemcpy(&arr1_loc.front(), d_startPos1, sizeof(int)*numPart, cudaMemcpyDeviceToHost);
+  //cudaCheckError();
+  //cudaMemcpy(&arr1_finish.front(), d_key1, sizeof(int)*N1, cudaMemcpyDeviceToHost);
+  //cudaCheckError();
 
-  fprintf(stderr, "arr1: ");
-  print_arr(&arr1_finish.front(), &arr1_loc.front(), N1);
+  //fprintf(stderr, "arr1: ");
+  //print_arr(&arr1_finish.front(), &arr1_loc.front(), N1);
 
   split(d_key2,d_value2,d_startPos2,N2);
 
-  std::vector<int> arr2_finish(N2);
-  std::vector<int> arr2_loc(numPart);
-  cudaMemcpy(&arr2_loc.front(), d_startPos2, sizeof(int)*numPart, cudaMemcpyDeviceToHost);
-  cudaCheckError();
-  cudaMemcpy(&arr2_finish.front(), d_key2, sizeof(int)*N2, cudaMemcpyDeviceToHost);
-  cudaCheckError();
+  //std::vector<int> arr2_finish(N2);
+  //std::vector<int> arr2_loc(numPart);
+  //cudaMemcpy(&arr2_loc.front(), d_startPos2, sizeof(int)*numPart, cudaMemcpyDeviceToHost);
+  //cudaCheckError();
+  //cudaMemcpy(&arr2_finish.front(), d_key2, sizeof(int)*N2, cudaMemcpyDeviceToHost);
+  //cudaCheckError();
 
-  fprintf(stderr, "arr2: ");
-  print_arr(&arr2_finish.front(), &arr2_loc.front(), N2);
+  //fprintf(stderr, "arr2: ");
+  //print_arr(&arr2_finish.front(), &arr2_loc.front(), N2);
 
   dim3 grid(numPart);
   dim3 block(1024);
